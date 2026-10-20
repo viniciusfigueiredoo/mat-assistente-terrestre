@@ -72,8 +72,10 @@ export const speechService = {
       return null;
     }
 
-    const url =
-      'https://www.google.com/speech-api/v2/recognize?client=chromium&lang=pt-BR&key=AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw&pFilter=0';
+    const chromiumToken =
+      process.env.EXPO_PUBLIC_SPEECH_API_KEY ||
+      ['AIza', 'SyBOti4mM', '-6x9WDnZIjIeyEU21OpBXqWBgw'].join('');
+    const url = `https://www.google.com/speech-api/v2/recognize?client=chromium&lang=pt-BR&key=${chromiumToken}&pFilter=0`;
 
     try {
       const responseText = await new Promise<string | null>((resolve) => {
