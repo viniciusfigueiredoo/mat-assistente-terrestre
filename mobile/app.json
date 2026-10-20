@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "MAT - Módulo Assistente Terrestre",
+    "slug": "app-mat-dlei-2026",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dlei2026.appmat",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "O App MAT precisa do Bluetooth para receber alertas de buracos, escadas e paredes do módulo acoplado à bengala.",
+        "NSLocationWhenInUseUsageDescription": "O App MAT precisa da sua localização GPS para calcular rotas seguras de caminhada.",
+        "NSMicrophoneUsageDescription": "O App MAT utiliza o microfone para receber o endereço de destino por comando de voz.",
+        "NSSpeechRecognitionUsageDescription": "O App MAT converte seu comando de voz em texto para pesquisar rotas."
+      }
+    },
+    "android": {
+      "package": "com.dlei2026.appmat",
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "peripheral",
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Permitir que o App MAT se conecte ao módulo da OLC via Bluetooth (BLE)."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permitir que o App MAT acesse sua localização para guiar você na rota."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Permitir o uso do microfone para ditar o destino por voz."
+        }
+      ],
+      "expo-sqlite",
+      "expo-status-bar"
+    ]
+  }
+}
