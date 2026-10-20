@@ -1,0 +1,98 @@
+name: Build & Release Android APK (MAT)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publicar também na aba Releases do GitHub?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Gerar APK Android (Expo SDK 57)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Configurar Java JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Configurar Cache do Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Instalar Dependências do App Mobile
+        working-directory: ./mobile
+        run: npm install --legacy-peer-deps
+
+      - name: Gerar Projeto Nativo Android (Expo Prebuild)
+        working-directory: ./mobile
+        env:
+          EXPO_NO_GIT_STATUS: 1
+          EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY }}
+        run: npx expo prebuild --platform android --clean
+
+      - name: Compilar APK Release (Gradle assembleRelease)
+        working-directory: ./mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+
+      - name: Renomear APK para MAT-App-v1.0.0.apk
+        run: |
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk ./MAT-App-v1.0.0.apk
+
+      - name: Disponibilizar APK nos Artefatos da Execução (Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MAT-Android-APK
+          path: ./MAT-App-v1.0.0.apk
+          if-no-files-found: error
+
+      - name: Publicar APK na aba Releases do GitHub
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: 'MAT - Módulo Assistente Terrestre (APK Android)'
+          body: |
+            ### Aplicativo Mobile MAT - Projeto DLEI 2026
+            Versão compilada para instalação direta em dispositivos Android (**APK Standalone**).
+
+            #### Principais Funcionalidades Incluídas:
+            - **Reconhecimento de Voz em Português (`pt-BR`):** Captura PCM em tempo real com detecção automática de fim de fala (VAD).
+            - **Síntese de Voz (TTS) Independente do Modo Silencioso:** Narração contínua no alto-falante principal.
+            - **Confirmação de Rota por Gestos em Tela Cheia:** Deslizar para a esquerda confirma a rota; deslizar para a direita cancela.
+            - **Navegação Ativa com GPS em Tempo Real:** Atualização automática da distância até cada esquina, aviso prévio a 25 m e anúncio automático de curva.
+            - **Integração Bluetooth Low Energy (BLE) com ESP32:** Recepção de alertas de **Buraco (`HOLE`)**, **Escada (`STAIRS`)** e **Parede (`WALL`)** dos sensores Frontal e Solo.
+          files: ./MAT-App-v1.0.0.apk
+          draft: false
+          prerelease: false
