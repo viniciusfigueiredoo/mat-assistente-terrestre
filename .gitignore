@@ -1,0 +1,24 @@
+# Dependências Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Variáveis de ambiente com chaves privadas
+mobile/.env
+mobile/.env.local
+
+# Arquivos de build nativo temporários
+mobile/android/
+mobile/ios/
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Circuito elétrico
+firmware-esp32/esquema_eletrico_mat.jpg
+firmware-esp32/esquema_eletrico_mat.svg
+
+# Gêneros textuais
+.pdf
