@@ -1,0 +1,25 @@
+{
+  "name": "Viva Way",
+  "short_name": "Viva Way",
+  "description": "Viva Way — Módulo Assistente Terrestre (MAT)",
+  "start_url": "/mat-assistente-terrestre/",
+  "scope": "/mat-assistente-terrestre/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070B14",
+  "theme_color": "#070B14",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/mat-assistente-terrestre/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/mat-assistente-terrestre/apple-touch-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
