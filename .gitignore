@@ -21,4 +21,4 @@ firmware-esp32/esquema_eletrico_mat.jpg
 firmware-esp32/esquema_eletrico_mat.svg
 
 # Gêneros textuais
-.pdf
+*.pdf
