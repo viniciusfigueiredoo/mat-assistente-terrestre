@@ -1,4 +1,4 @@
-name: Build & Release Android APK + iOS IPA (Viva Way)
+name: Build Android APK & Deploy iPhone PWA (Viva Way v1.0.0)
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       create_release:
-        description: 'Publicar também na aba Releases do GitHub?'
+        description: 'Publicar na aba Releases do GitHub?'
         required: false
         default: 'true'
         type: choice
@@ -20,11 +20,102 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  build-android-apk:
-    name: Gerar APK Android (Viva Way v1.1.0)
+  deploy-iphone-pwa:
+    name: Publicar PWA para iPhone (GitHub Pages)
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Instalar Dependências
+        working-directory: ./mobile
+        run: npm install --legacy-peer-deps
+
+      - name: Exportar Build Web / PWA (Expo Web)
+        working-directory: ./mobile
+        env:
+          CI: 1
+        run: npx expo export --platform web --output-dir dist
+
+      - name: Configurar Manifesto PWA e Meta Tags de Tela Cheia para iPhone (iOS Safari)
+        working-directory: ./mobile/dist
+        run: |
+          touch .nojekyll
+          cp ../assets/icon.png ./icon.png
+          cp ../assets/icon.png ./apple-touch-icon.png
+
+          cat << 'EOF' > manifest.json
+          {
+            "name": "Viva Way",
+            "short_name": "Viva Way",
+            "description": "Viva Way — Módulo Assistente Terrestre (MAT)",
+            "start_url": "/mat-assistente-terrestre/",
+            "scope": "/mat-assistente-terrestre/",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#070B14",
+            "theme_color": "#070B14",
+            "lang": "pt-BR",
+            "icons": [
+              {
+                "src": "/mat-assistente-terrestre/icon.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+              },
+              {
+                "src": "/mat-assistente-terrestre/apple-touch-icon.png",
+                "sizes": "1024x1024",
+                "type": "image/png"
+              }
+            ]
+          }
+          EOF
+
+          node -e '
+            const fs = require("fs");
+            let html = fs.readFileSync("index.html", "utf8");
+            const pwaHead = `
+              <meta name="theme-color" content="#070B14" />
+              <meta name="apple-mobile-web-app-capable" content="yes" />
+              <meta name="mobile-web-app-capable" content="yes" />
+              <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+              <meta name="apple-mobile-web-app-title" content="Viva Way" />
+              <link rel="apple-touch-icon" href="/mat-assistente-terrestre/apple-touch-icon.png" />
+              <link rel="icon" type="image/png" href="/mat-assistente-terrestre/icon.png" />
+              <link rel="manifest" href="/mat-assistente-terrestre/manifest.json" />
+            `;
+            html = html.replace(
+              "width=device-width, initial-scale=1, shrink-to-fit=no",
+              "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+            );
+            html = html.replace("</head>", pwaHead + "\n</head>");
+            fs.writeFileSync("index.html", html, "utf8");
+          '
+
+      - name: Publicar PWA na branch gh-pages (GitHub Pages)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./mobile/dist
+          force_orphan: true
+
+  build-android-apk:
+    name: Gerar APK Android & Atualizar Release v1.0.0
+    runs-on: ubuntu-latest
+    needs: deploy-iphone-pwa
 
     steps:
       - name: Checkout do Repositório
@@ -68,104 +159,54 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
-      - name: Renomear APK para VivaWay-v1.1.0.apk
+      - name: Renomear APK para VivaWay-v1.0.0.apk
         run: |
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk ./VivaWay-v1.1.0.apk
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk ./VivaWay-v1.0.0.apk
 
       - name: Disponibilizar APK nos Artefatos da Execução (Actions)
         uses: actions/upload-artifact@v4
         with:
           name: VivaWay-Android-APK
-          path: ./VivaWay-v1.1.0.apk
+          path: ./VivaWay-v1.0.0.apk
           if-no-files-found: error
 
-      - name: Publicar APK na aba Releases do GitHub
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+      - name: Limpar Release v1.1.0 antiga (deprecated com .ipa) e atualizar v1.0.0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete v1.1.0 --yes --cleanup-tag || true
+          gh release delete v1.0.0 --yes || true
+
+      - name: Publicar Release Oficial v1.0.0 (Android APK + Link PWA iPhone)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
-          name: 'Viva Way v1.1.0 — Módulo Assistente Terrestre (Android & iOS)'
+          tag_name: v1.0.0
+          name: 'Viva Way v1.0.0 — Módulo Assistente Terrestre (Android & iPhone)'
           body: |
-            ## 🚀 Changelog — Versão 1.1.0
+            ## 📱 Viva Way v1.0.0 — Módulo Assistente Terrestre (MAT)
 
-            ### ✨ Novidades
-            - **Nome de Instalação `Viva Way`:** O aplicativo passa a ser identificado como **Viva Way** na tela inicial do celular, mantendo internamente a integração com o **Módulo MAT**.
-            - **Suporte para iPhone / iOS (`.ipa`):** Adicionada compilação automatizada para iOS (`VivaWay-iOS-v1.1.0.ipa`) e permissões nativas para iPhone.
-            - **Modo Tela Cheia Imersivo (`Android` & `iOS`):** Ocultação automática da barra de notificações superior e dos botões de navegação inferiores do sistema operacional.
-            - **Ícone Customizado:** Suporte a ícone dedicado e *Adaptive Icon* no Android (`mobile/assets/icon.png`).
+            ### 🤖 Como instalar no Android (`.apk`)
+            1. Baixe o arquivo **`VivaWay-v1.0.0.apk`** anexado abaixo (em *Assets*).
+            2. Toque no arquivo baixado e confirme a instalação.
 
-            ### 🛠️ Melhorias de Layout e Usabilidade
-            - **Proporção Responsiva Dinâmica:** Orbe central, fontes e cartões redimensionam proporcionalmente ao tamanho real da tela do aparelho.
-            - **Tela de Confirmação de Rota:** Painéis bipartidos de gesto (`CONFIRMAR ROTA` e `CANCELAR ROTA`) centralizados com destaque visual e sem quebra de palavras.
-            - **Tela de Navegação e Sensores:** Exibição limpa em tela única sem rolagem e indicadores de **`Sensor Frontal`** e **`Sensor Solo`** empilhados verticalmente.
-          files: ./VivaWay-v1.1.0.apk
+            ---
+
+            ### 🍎 Como instalar no iPhone / iOS (Web App PWA)
+            1. Abra o **Safari** no iPhone e acesse:
+               👉 **[https://viniciusfigueiredoo.github.io/mat-assistente-terrestre/](https://viniciusfigueiredoo.github.io/mat-assistente-terrestre/)**
+            2. Toque no ícone **Compartilhar** (quadrado com seta para cima na barra inferior do Safari).
+            3. Role para baixo e selecione **"Adicionar à Tela de Início"** (*Add to Home Screen*).
+            4. O aplicativo **Viva Way** aparecerá na tela inicial do iPhone com o ícone oficial e abrirá em **tela cheia**!
+
+            ---
+
+            ### 📋 Changelog v1.0.0
+            - **Modo Tela Cheia Imersivo (`Android` & `iOS`):** Oculta automaticamente a barra de notificações superior e os botões de navegação inferiores do sistema.
+            - **Layout Responsivo Dinâmico:** Orbe central, fontes e cartões de sensores (**`Sensor Frontal`** e **`Sensor Solo`**) ajustados proporcionalmente para qualquer tela.
+            - **Reconhecimento de Voz em Português (`pt-BR`):** Captura de voz com detecção automática de pausa (VAD) e integração com o ditado do Safari no iPhone.
+            - **Síntese de Voz (TTS) Independente do Modo Silencioso:** Narração contínua no alto-falante principal.
+            - **Navegação Ativa com GPS em Tempo Real:** Atualização automática da distância até cada esquina, aviso prévio a 25 m e anúncio automático de curva.
+            - **Integração Bluetooth Low Energy (BLE) com ESP32:** Recepção de alertas de **Buraco (`HOLE`)**, **Escada (`STAIRS`)** e **Parede (`WALL`)**.
+          files: ./VivaWay-v1.0.0.apk
           draft: false
           prerelease: false
-
-  build-ios-ipa:
-    name: Gerar IPA para iPhone / iOS (Viva Way v1.1.0)
-    runs-on: macos-15
-
-    steps:
-      - name: Checkout do Repositório
-        uses: actions/checkout@v4
-
-      - name: Configurar Node.js 24 LTS
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: mobile/package-lock.json
-
-      - name: Instalar Dependências do App Mobile
-        working-directory: ./mobile
-        run: npm install --legacy-peer-deps
-
-      - name: Gerar Projeto Nativo iOS (Expo Prebuild)
-        working-directory: ./mobile
-        env:
-          EXPO_NO_GIT_STATUS: 1
-          CI: 1
-        run: npx expo prebuild --platform ios --clean
-
-      - name: Instalar CocoaPods iOS
-        working-directory: ./mobile/ios
-        run: pod install
-
-      - name: Compilar App iOS (Xcode Release sem assinatura paga)
-        working-directory: ./mobile/ios
-        run: |
-          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
-          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-          xcodebuild -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            | tail -n 100
-
-      - name: Empacotar em arquivo instalável .ipa (VivaWay-iOS-v1.1.0.ipa)
-        run: |
-          mkdir -p Payload
-          APP_PATH=$(find mobile/ios/build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
-          cp -r "$APP_PATH" Payload/
-          zip -r -q VivaWay-iOS-v1.1.0.ipa Payload
-
-      - name: Disponibilizar IPA para iPhone nos Artefatos (Actions)
-        uses: actions/upload-artifact@v4
-        with:
-          name: VivaWay-iOS-IPA
-          path: ./VivaWay-iOS-v1.1.0.ipa
-          if-no-files-found: error
-
-      - name: Anexar IPA na aba Releases do GitHub
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
-          files: ./VivaWay-iOS-v1.1.0.ipa

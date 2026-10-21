@@ -336,6 +336,14 @@ export default function App() {
     setVoiceFeedbackHint('Preparando microfone...');
     await speechService.triggerGestureHaptic('CONFIRM');
 
+    // No navegador / PWA do iPhone, o Safari exige que o reconhecimento de voz seja iniciado
+    // diretamente no evento de toque do usuário
+    if (Platform.OS === 'web') {
+      speechService.stop();
+      beginMicrophoneListening();
+      return;
+    }
+
     speechService.speak('Ouvindo. Diga o destino.', {
       interrupt: true,
       onDone: () => {

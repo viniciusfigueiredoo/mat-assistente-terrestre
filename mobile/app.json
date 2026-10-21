@@ -1,23 +1,47 @@
 {
   "expo": {
-    "name": "MAT - Módulo Assistente Terrestre",
+    "name": "Viva Way",
     "slug": "app-mat-dlei-2026",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#070B14",
     "newArchEnabled": true,
+    "experiments": {
+      "baseUrl": "/mat-assistente-terrestre"
+    },
+    "web": {
+      "name": "Viva Way",
+      "shortName": "Viva Way",
+      "favicon": "./assets/icon.png",
+      "backgroundColor": "#070B14",
+      "themeColor": "#070B14",
+      "display": "standalone",
+      "orientation": "portrait",
+      "lang": "pt-BR"
+    },
     "ios": {
       "supportsTablet": false,
+      "requireFullScreen": true,
       "bundleIdentifier": "com.dlei2026.appmat",
       "infoPlist": {
+        "UIStatusBarHidden": true,
+        "UIViewControllerBasedStatusBarAppearance": false,
         "NSBluetoothAlwaysUsageDescription": "O App MAT precisa do Bluetooth para receber alertas de buracos, escadas e paredes do módulo acoplado à bengala.",
+        "NSBluetoothPeripheralUsageDescription": "O App MAT utiliza Bluetooth para comunicar-se com o Módulo Assistente Terrestre (ESP32).",
         "NSLocationWhenInUseUsageDescription": "O App MAT precisa da sua localização GPS para calcular rotas seguras de caminhada.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "O App MAT utiliza sua localização GPS para guiar você passo a passo durante a caminhada.",
         "NSMicrophoneUsageDescription": "O App MAT utiliza o microfone para receber o endereço de destino por comando de voz.",
         "NSSpeechRecognitionUsageDescription": "O App MAT converte seu comando de voz em texto para pesquisar rotas."
       }
     },
     "android": {
       "package": "com.dlei2026.appmat",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#070B14"
+      },
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
@@ -53,8 +77,21 @@
           "microphonePermission": "Permitir o uso do microfone para ditar o destino por voz."
         }
       ],
-      "expo-sqlite",
-      "expo-status-bar"
+      [
+        "expo-navigation-bar",
+        {
+          "hidden": true,
+          "style": "light"
+        }
+      ],
+      [
+        "expo-status-bar",
+        {
+          "hidden": true,
+          "style": "light"
+        }
+      ],
+      "expo-sqlite"
     ]
   }
 }
