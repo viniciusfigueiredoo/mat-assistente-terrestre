@@ -1,4 +1,4 @@
-name: Build & Release Android APK (MAT)
+name: Build & Release Android APK + iOS IPA (Viva Way)
 
 on:
   push:
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build-android-apk:
-    name: Gerar APK Android (Expo SDK 57)
+    name: Gerar APK Android (Viva Way v1.1.0)
     runs-on: ubuntu-latest
 
     steps:
@@ -68,33 +68,104 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
-      - name: Renomear APK para MAT-App-v1.0.0.apk
+      - name: Renomear APK para VivaWay-v1.1.0.apk
         run: |
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk ./MAT-App-v1.0.0.apk
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk ./VivaWay-v1.1.0.apk
 
       - name: Disponibilizar APK nos Artefatos da Execução (Actions)
         uses: actions/upload-artifact@v4
         with:
-          name: MAT-Android-APK
-          path: ./MAT-App-v1.0.0.apk
+          name: VivaWay-Android-APK
+          path: ./VivaWay-v1.1.0.apk
           if-no-files-found: error
 
       - name: Publicar APK na aba Releases do GitHub
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
-          name: 'MAT - Módulo Assistente Terrestre (APK Android)'
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
+          name: 'Viva Way v1.1.0 — Módulo Assistente Terrestre (Android & iOS)'
           body: |
-            ### 📱 Aplicativo Mobile MAT — Projeto DLEI 2026
-            Versão compilada para instalação direta em dispositivos Android (**APK Standalone**).
+            ## 🚀 Changelog — Versão 1.1.0
 
-            #### Principais Funcionalidades Incluídas:
-            - **Reconhecimento de Voz em Português (`pt-BR`):** Captura PCM em tempo real com detecção automática de fim de fala (VAD).
-            - **Síntese de Voz (TTS) Independente do Modo Silencioso:** Narração contínua no alto-falante principal.
-            - **Confirmação de Rota por Gestos em Tela Cheia:** Deslizar para a esquerda confirma a rota; deslizar para a direita cancela.
-            - **Navegação Ativa com GPS em Tempo Real:** Atualização automática da distância até cada esquina, aviso prévio a 25 m e anúncio automático de curva.
-            - **Integração Bluetooth Low Energy (BLE) com ESP32:** Recepção de alertas de **Buraco (`HOLE`)**, **Escada (`STAIRS`)** e **Parede (`WALL`)** dos sensores Frontal e Solo.
-          files: ./MAT-App-v1.0.0.apk
+            ### ✨ Novidades
+            - **Nome de Instalação `Viva Way`:** O aplicativo passa a ser identificado como **Viva Way** na tela inicial do celular, mantendo internamente a integração com o **Módulo MAT**.
+            - **Suporte para iPhone / iOS (`.ipa`):** Adicionada compilação automatizada para iOS (`VivaWay-iOS-v1.1.0.ipa`) e permissões nativas para iPhone.
+            - **Modo Tela Cheia Imersivo (`Android` & `iOS`):** Ocultação automática da barra de notificações superior e dos botões de navegação inferiores do sistema operacional.
+            - **Ícone Customizado:** Suporte a ícone dedicado e *Adaptive Icon* no Android (`mobile/assets/icon.png`).
+
+            ### 🛠️ Melhorias de Layout e Usabilidade
+            - **Proporção Responsiva Dinâmica:** Orbe central, fontes e cartões redimensionam proporcionalmente ao tamanho real da tela do aparelho.
+            - **Tela de Confirmação de Rota:** Painéis bipartidos de gesto (`CONFIRMAR ROTA` e `CANCELAR ROTA`) centralizados com destaque visual e sem quebra de palavras.
+            - **Tela de Navegação e Sensores:** Exibição limpa em tela única sem rolagem e indicadores de **`Sensor Frontal`** e **`Sensor Solo`** empilhados verticalmente.
+          files: ./VivaWay-v1.1.0.apk
           draft: false
           prerelease: false
+
+  build-ios-ipa:
+    name: Gerar IPA para iPhone / iOS (Viva Way v1.1.0)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Instalar Dependências do App Mobile
+        working-directory: ./mobile
+        run: npm install --legacy-peer-deps
+
+      - name: Gerar Projeto Nativo iOS (Expo Prebuild)
+        working-directory: ./mobile
+        env:
+          EXPO_NO_GIT_STATUS: 1
+          CI: 1
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Instalar CocoaPods iOS
+        working-directory: ./mobile/ios
+        run: pod install
+
+      - name: Compilar App iOS (Xcode Release sem assinatura paga)
+        working-directory: ./mobile/ios
+        run: |
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            | tail -n 100
+
+      - name: Empacotar em arquivo instalável .ipa (VivaWay-iOS-v1.1.0.ipa)
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find mobile/ios/build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
+          zip -r -q VivaWay-iOS-v1.1.0.ipa Payload
+
+      - name: Disponibilizar IPA para iPhone nos Artefatos (Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VivaWay-iOS-IPA
+          path: ./VivaWay-iOS-v1.1.0.ipa
+          if-no-files-found: error
+
+      - name: Anexar IPA na aba Releases do GitHub
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
+          files: ./VivaWay-iOS-v1.1.0.ipa
