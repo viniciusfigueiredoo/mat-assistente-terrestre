@@ -1,10 +1,46 @@
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { MAT_BLE_CONFIG } from '../constants/ble';
 import { MatTelemetryPayload, ObstacleKind } from '../types/mat';
 import { storageService } from './storageService';
 
 type TelemetryListener = (payload: MatTelemetryPayload) => void;
 type ConnectionListener = (connected: boolean, deviceName: string, isSimulated: boolean) => void;
+
+/**
+ * Solicita permissões de Bluetooth e Localização em tempo de execução no Android 12+ (API 31+)
+ */
+async function requestAndroidBlePermissions(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+
+  try {
+    const apiLevel =
+      typeof Platform.Version === 'number'
+        ? Platform.Version
+        : parseInt(String(Platform.Version), 10);
+
+    if (apiLevel >= 31) {
+      const results = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      ]);
+      return (
+        results['android.permission.BLUETOOTH_SCAN'] ===
+          PermissionsAndroid.RESULTS.GRANTED &&
+        results['android.permission.BLUETOOTH_CONNECT'] ===
+          PermissionsAndroid.RESULTS.GRANTED
+      );
+    } else {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  } catch (err) {
+    console.warn('[BLE] Erro ao pedir permissões Android:', err);
+    return false;
+  }
+}
 
 /**
  * Decodifica string base64 recebida da pilha BLE GATT nativa (`react-native-ble-plx`)
@@ -173,10 +209,16 @@ class MatBleService {
   private async scanAndConnect(): Promise<void> {
     if (!this.bleManager || this.isConnected) return;
 
+    const hasPermissions = await requestAndroidBlePermissions();
+    if (!hasPermissions) {
+      console.warn('[BLE] Permissões Bluetooth não concedidas no Android.');
+      return;
+    }
+
     const savedDeviceId = await storageService.getLastPairedEsp32Id();
 
     this.bleManager.startDeviceScan(
-      [MAT_BLE_CONFIG.SERVICE_UUID],
+      null, // Varre sem filtro de UUID estrito no anúncio para garantir descoberta imediata
       { allowDuplicates: false },
       async (error: any, device: any) => {
         if (error) {
@@ -184,9 +226,14 @@ class MatBleService {
           return;
         }
 
+        const devName = (device?.name || device?.localName || '').trim();
         const isMatDevice =
-          device?.name === MAT_BLE_CONFIG.DEVICE_NAME ||
-          device?.localName === MAT_BLE_CONFIG.DEVICE_NAME ||
+          devName === MAT_BLE_CONFIG.DEVICE_NAME ||
+          devName.includes('MAT-ESP32') ||
+          (Array.isArray(device?.serviceUUIDs) &&
+            device.serviceUUIDs.some((uuid: string) =>
+              uuid.toLowerCase().includes('4fafc201')
+            )) ||
           (savedDeviceId && device?.id === savedDeviceId);
 
         if (isMatDevice) {
