@@ -7,9 +7,8 @@ type TelemetryListener = (payload: MatTelemetryPayload) => void;
 type ConnectionListener = (connected: boolean, deviceName: string, isSimulated: boolean) => void;
 
 /**
- * Decodifica string x64 recebida da pilha BLE GATT nativa (`react-native-ble-plx`)
- * para não depender de bibliotecas externas mais pesadas
- */ 
+ * Decodifica string base64 recebida da pilha BLE GATT nativa (`react-native-ble-plx`)
+ */
 function decodeBase64(b64: string): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
   let str = '';
@@ -34,8 +33,10 @@ function decodeBase64(b64: string): string {
 
 /**
  * Serviço de Comunicação Bluetooth Low Energy (BLE) com o ESP32 do Módulo MAT
- * Atende RF07 e RF13
- * Inclui também suporte a Simulação de Bancada quando o ESP32 físico não está presente
+ * Suporta:
+ * 1. Conexão Nativa (Android / iOS via `react-native-ble-plx`)
+ * 2. Conexão Web Bluetooth (Navegadores Chrome, Edge e Bluefy via `navigator.bluetooth`)
+ * 3. Modo Simulador de Bancada para testes visuais quando o hardware não estiver presente
  */
 class MatBleService {
   private bleManager: any = null;
@@ -53,7 +54,6 @@ class MatBleService {
 
   /**
    * Inicializa `react-native-ble-plx` apenas em builds nativos Android/iOS
-   * No navegador Web ou Expo Go sem módulo nativo, ativa o Modo Simulador transparente
    */
   private initNativeBleIfAvailable(): void {
     if (Platform.OS === 'web') {
@@ -61,7 +61,6 @@ class MatBleService {
       return;
     }
     try {
-      // Importação dinâmica com segurança para evitar crash caso aberto no Expo Go padrão
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { BleManager } = require('react-native-ble-plx');
       this.bleManager = new BleManager();
@@ -72,9 +71,16 @@ class MatBleService {
     }
   }
 
-  
-  // Inicia busca e conexão automática com o ESP32 (`MAT-ESP32`) (RF13)
-  
+  /**
+   * Verifica se o navegador atual suporta a Web Bluetooth API
+   */
+  isWebBluetoothSupported(): boolean {
+    return typeof navigator !== 'undefined' && !!(navigator as any).bluetooth;
+  }
+
+  /**
+   * Inicia busca e conexão automática com o ESP32 (`MAT-ESP32`) no app nativo
+   */
   async startAutoConnect(): Promise<void> {
     if (this.isSimulatedMode || !this.bleManager) {
       this.isConnected = true;
@@ -90,6 +96,64 @@ class MatBleService {
         this.scanAndConnect();
       }
     }, MAT_BLE_CONFIG.RECONNECT_INTERVAL_MS);
+  }
+
+  /**
+   * Conecta diretamente ao ESP32 físico via Web Bluetooth (usado no GitHub Pages / Navegador)
+   * Requer gesto do usuário (clique no botão de Bluetooth)
+   */
+  async connectWebBluetooth(): Promise<boolean> {
+    if (!this.isWebBluetoothSupported()) {
+      return false;
+    }
+
+    try {
+      const navBle = (navigator as any).bluetooth;
+      const device = await navBle.requestDevice({
+        filters: [{ name: MAT_BLE_CONFIG.DEVICE_NAME }],
+        optionalServices: [MAT_BLE_CONFIG.SERVICE_UUID],
+      });
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(MAT_BLE_CONFIG.SERVICE_UUID);
+      const characteristic = await service.getCharacteristic(MAT_BLE_CONFIG.CHAR_OBSTACLE_UUID);
+
+      await characteristic.startNotifications();
+      characteristic.addEventListener('characteristicvaluechanged', (event: any) => {
+        try {
+          const value = event.target.value;
+          const decoder = new TextDecoder('utf-8');
+          const jsonStr = decoder.decode(value);
+          const parsed = JSON.parse(jsonStr) as MatTelemetryPayload;
+          if (typeof parsed.bat === 'number') {
+            this.currentBattery = parsed.bat;
+          }
+          this.emitTelemetry({
+            ...parsed,
+            timestamp: Date.now(),
+          });
+        } catch (e) {
+          console.warn('[WebBLE] Erro ao decodificar pacote do ESP32:', e);
+        }
+      });
+
+      this.connectedDevice = device;
+      this.isConnected = true;
+      this.isSimulatedMode = false;
+      this.notifyConnectionListeners();
+
+      device.addEventListener('gattserverdisconnected', () => {
+        this.isConnected = false;
+        this.connectedDevice = null;
+        this.isSimulatedMode = true;
+        this.notifyConnectionListeners();
+      });
+
+      return true;
+    } catch (err) {
+      console.warn('[WebBLE] Conexão cancelada ou falhou:', err);
+      return false;
+    }
   }
 
   private async scanAndConnect(): Promise<void> {
@@ -166,7 +230,6 @@ class MatBleService {
 
   /**
    * Permite simular o envio de um pacote BLE vindo do ESP32 (Buraco, Escada, Parede ou Livre)
-   * para testes e validação da interface e voz sem precisar do hardware físico ligado
    */
   simulateEsp32Obstacle(type: ObstacleKind, distCm = 150): void {
     const payload: MatTelemetryPayload = {
@@ -197,6 +260,10 @@ class MatBleService {
 
   getBatteryLevel(): number {
     return this.currentBattery;
+  }
+
+  isSimulated(): boolean {
+    return this.isSimulatedMode;
   }
 
   private emitTelemetry(payload: MatTelemetryPayload): void {

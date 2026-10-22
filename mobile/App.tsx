@@ -15,6 +15,7 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   AppState,
   Easing,
@@ -57,6 +58,7 @@ export default function App() {
 
   // Estado de conexão Bluetooth (BLE) com o ESP32 (RF07, RF13)
   const [bleConnected, setBleConnected] = useState<boolean>(true);
+  const [isBleSimulated, setIsBleSimulated] = useState<boolean>(true);
   const [batteryLevel, setBatteryLevel] = useState<number>(85);
 
   // Estado de Comando de Voz (STT - RF08)
@@ -285,8 +287,9 @@ export default function App() {
   useEffect(() => {
     speechService.initAudioSession();
 
-    const unsubConn = bleService.onConnectionChange((connected) => {
+    const unsubConn = bleService.onConnectionChange((connected, _name, isSimulated) => {
       setBleConnected(connected);
+      setIsBleSimulated(isSimulated);
     });
 
     const unsubTelemetry = bleService.onTelemetry((payload) => {
@@ -315,6 +318,33 @@ export default function App() {
       speechService.stop();
     };
   }, []);
+
+  const handleBluetoothPress = async () => {
+    if (Platform.OS === 'web') {
+      if (bleService.isWebBluetoothSupported()) {
+        speechService.speak(
+          'Buscando módulo MAT via Bluetooth. Por favor, selecione MAT-ESP32 na lista na tela.',
+          { interrupt: true }
+        );
+        const connected = await bleService.connectWebBluetooth();
+        if (connected) {
+          speechService.speak('Módulo MAT conectado com sucesso.', { interrupt: true });
+        }
+      } else {
+        speechService.speak(
+          'O Safari do iPhone não suporta Bluetooth direto em páginas web. Use o navegador gratuito Bluefy da App Store, ou o aplicativo Android APK.',
+          { interrupt: true }
+        );
+        Alert.alert(
+          'Bluetooth no iPhone (iOS)',
+          'O Safari da Apple restringe o acesso direto ao Bluetooth em páginas web.\n\nPara parear o ESP32 com o iPhone via Web:\n1. Baixe o navegador gratuito "Bluefy - Web BLE Browser" na App Store.\n2. Abra o link do Viva Way dentro do Bluefy para conectar diretamente!\n\nNo Android, você também pode baixar o arquivo .apk oficial que conecta automaticamente.'
+        );
+      }
+    } else {
+      bleService.startAutoConnect();
+      speechService.speak('Buscando módulo MAT via Bluetooth.', { interrupt: true });
+    }
+  };
 
   // ==========================================================================
   // RECONHECIMENTO DE VOZ COM TRANSCRIÇÃO REAL E SEM DESTINO PADRÃO (RF08)
@@ -775,28 +805,43 @@ export default function App() {
       >
         {/* CABEÇALHO SUPERIOR COM RESPIRO SEGURO PARA CÂMERA FRONTAL / ILHA DINÂMICA */}
         <View style={styles.topBar}>
-          <View
+          <Pressable
             style={styles.bleStatusPill}
+            onPress={handleBluetoothPress}
             accessible
-            accessibilityRole="header"
+            accessibilityRole="button"
             accessibilityLabel={`Módulo MAT ${
-              bleConnected ? 'Conectado' : 'Desconectado'
+              bleConnected
+                ? isBleSimulated
+                  ? 'Modo Simulado. Toque para conectar o ESP32 real'
+                  : 'Físico Conectado'
+                : 'Desconectado. Toque para conectar'
             }. Bateria em ${batteryLevel} por cento.`}
           >
             <View
               style={[
                 styles.statusDot,
-                { backgroundColor: bleConnected ? '#10B981' : '#F59E0B' },
+                {
+                  backgroundColor: bleConnected
+                    ? isBleSimulated
+                      ? '#38BDF8'
+                      : '#10B981'
+                    : '#F59E0B',
+                },
               ]}
             />
             <Ionicons name="bluetooth" size={16} color="#38BDF8" />
             <Text style={styles.bleStatusText}>
-              {bleConnected ? 'MAT Conectado' : 'Buscando MAT'}
+              {bleConnected
+                ? isBleSimulated
+                  ? 'Conectar ESP32'
+                  : 'MAT Conectado'
+                : 'Buscando MAT'}
             </Text>
             <View style={styles.pillDivider} />
             <Ionicons name="battery-charging" size={16} color="#10B981" />
             <Text style={styles.batteryText}>{batteryLevel}%</Text>
-          </View>
+          </Pressable>
 
           <Pressable
             style={[
