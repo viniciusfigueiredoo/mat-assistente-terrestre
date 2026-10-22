@@ -109,10 +109,24 @@ class MatBleService {
 
     try {
       const navBle = (navigator as any).bluetooth;
-      const device = await navBle.requestDevice({
-        filters: [{ name: MAT_BLE_CONFIG.DEVICE_NAME }],
-        optionalServices: [MAT_BLE_CONFIG.SERVICE_UUID],
-      });
+      let device: any = null;
+
+      try {
+        device = await navBle.requestDevice({
+          filters: [
+            { name: MAT_BLE_CONFIG.DEVICE_NAME },
+            { namePrefix: 'MAT' },
+            { services: [MAT_BLE_CONFIG.SERVICE_UUID] },
+          ],
+          optionalServices: [MAT_BLE_CONFIG.SERVICE_UUID],
+        });
+      } catch {
+        // Fallback: se o filtro estrito falhar, permite listar dispositivos próximos
+        device = await navBle.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [MAT_BLE_CONFIG.SERVICE_UUID],
+        });
+      }
 
       const server = await device.gatt.connect();
       const service = await server.getPrimaryService(MAT_BLE_CONFIG.SERVICE_UUID);
