@@ -118,8 +118,9 @@ class MatBleService {
    * Inicia busca e conexão automática com o ESP32 (`MAT-ESP32`) no app nativo
    */
   async startAutoConnect(): Promise<void> {
-    if (this.isSimulatedMode || !this.bleManager) {
-      this.isConnected = true;
+    if (!this.bleManager) {
+      this.isConnected = false;
+      this.isSimulatedMode = true;
       this.notifyConnectionListeners();
       return;
     }
@@ -128,7 +129,7 @@ class MatBleService {
 
     if (this.reconnectTimer) clearInterval(this.reconnectTimer);
     this.reconnectTimer = setInterval(() => {
-      if (!this.isConnected && !this.isSimulatedMode) {
+      if (!this.isConnected && this.bleManager) {
         this.scanAndConnect();
       }
     }, MAT_BLE_CONFIG.RECONNECT_INTERVAL_MS);

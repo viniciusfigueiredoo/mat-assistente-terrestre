@@ -57,7 +57,7 @@ export default function App() {
   const [screen, setScreen] = useState<AppScreen>('VOICE_COMMAND');
 
   // Estado de conexão Bluetooth (BLE) com o ESP32 (RF07, RF13)
-  const [bleConnected, setBleConnected] = useState<boolean>(true);
+  const [bleConnected, setBleConnected] = useState<boolean>(false);
   const [isBleSimulated, setIsBleSimulated] = useState<boolean>(true);
   const [batteryLevel, setBatteryLevel] = useState<number>(85);
 
@@ -79,10 +79,10 @@ export default function App() {
 
   // Estado de Telemetria de Obstáculos recebidos do MAT via BLE (RF01-RF07, RF12)
   const [telemetry, setTelemetry] = useState<MatTelemetryPayload>({
-    type: 'STAIRS',
-    dist: 150,
-    front: 150,
-    ground: 55,
+    type: 'CLEAR',
+    dist: 0,
+    front: 0,
+    ground: 0,
     bat: 85,
   });
 
@@ -102,6 +102,11 @@ export default function App() {
   const lastVoiceTimestampRef = useRef<number>(0);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFinishingCaptureRef = useRef<boolean>(false);
+  const lastObstacleAlertRef = useRef<{ type: ObstacleKind; time: number; dist: number }>({
+    type: 'CLEAR',
+    time: 0,
+    dist: 0,
+  });
 
   const streamEncoding = Platform.OS === 'android' ? 'int16' : 'float32';
   const requestedSampleRate = Platform.OS === 'android' ? 16000 : 48000;
@@ -290,6 +295,9 @@ export default function App() {
     const unsubConn = bleService.onConnectionChange((connected, _name, isSimulated) => {
       setBleConnected(connected);
       setIsBleSimulated(isSimulated);
+      if (connected && !isSimulated) {
+        speechService.speak('Módulo MAT conectado com sucesso.');
+      }
     });
 
     const unsubTelemetry = bleService.onTelemetry((payload) => {
@@ -299,17 +307,30 @@ export default function App() {
       }
 
       if (payload.type !== 'CLEAR') {
-        const distMeters = (payload.dist / 100).toFixed(1).replace('.', ',');
-        const alertMessage = OBSTACLE_METADATA[payload.type].ttsAlert(distMeters);
-        speechService.triggerGestureHaptic('DANGER');
-        speechService.speak(alertMessage, { interrupt: true });
+        const now = Date.now();
+        const last = lastObstacleAlertRef.current;
+        const cooldownPassed = now - last.time >= 3500;
+        const isDifferentThreat = payload.type !== last.type && now - last.time >= 2000;
+        const isUrgentHole = payload.type === 'HOLE' && last.type !== 'HOLE';
+
+        if (cooldownPassed || isDifferentThreat || isUrgentHole) {
+          lastObstacleAlertRef.current = {
+            type: payload.type,
+            time: now,
+            dist: payload.dist,
+          };
+          const distMeters = (payload.dist / 100).toFixed(1).replace('.', ',');
+          const alertMessage = OBSTACLE_METADATA[payload.type].ttsAlert(distMeters);
+          speechService.triggerGestureHaptic('DANGER');
+          speechService.speak(alertMessage, { interrupt: true });
+        }
       }
     });
 
     bleService.startAutoConnect();
 
     speechService.speak(
-      'Módulo MAT conectado. Bateria em 85 por cento. Toque no centro da tela e diga o destino desejado.'
+      'Viva Way pronto. Toque no centro da tela e diga o destino desejado.'
     );
 
     return () => {
@@ -867,6 +888,37 @@ export default function App() {
           </Pressable>
         </View>
 
+        {/* Banner de Telemetria em Tempo Real do ESP32 Físico (RF07) */}
+        {!isBleSimulated && bleConnected && (
+          <View style={styles.matLiveHeaderBanner}>
+            <View style={styles.matLiveHeaderCol}>
+              <Text style={styles.matLiveHeaderLabel}>FRONTAL</Text>
+              <Text style={styles.matLiveHeaderValue}>
+                {telemetry.front >= 900 ? 'Sem eco' : `${telemetry.front} cm`}
+              </Text>
+            </View>
+            <View style={styles.matLiveHeaderDivider} />
+            <View style={styles.matLiveHeaderCol}>
+              <Text style={styles.matLiveHeaderLabel}>SOLO</Text>
+              <Text style={styles.matLiveHeaderValue}>
+                {telemetry.ground >= 900 ? 'Sem eco' : `${telemetry.ground} cm`}
+              </Text>
+            </View>
+            <View style={styles.matLiveHeaderDivider} />
+            <View style={styles.matLiveHeaderCol}>
+              <Text style={styles.matLiveHeaderLabel}>DETECÇÃO</Text>
+              <Text
+                style={[
+                  styles.matLiveHeaderValue,
+                  { color: OBSTACLE_METADATA[telemetry.type].borderColor },
+                ]}
+              >
+                {telemetry.type === 'CLEAR' ? 'LIVRE' : OBSTACLE_METADATA[telemetry.type].title}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* ====================================================================
             TELA 1: PAREAMENTO & COMANDO DE VOZ (RF08, RF13)
            ==================================================================== */}
@@ -1269,7 +1321,7 @@ export default function App() {
         {showBenchSimulator && (
           <View style={styles.simulatorDrawer}>
             <Text style={styles.simulatorHeaderLabel}>
-              SIMULADOR DE PACOTES BLE DO ESP32 (TESTE DE BANCADA)
+              PACOTES BLE DO ESP32 {isBleSimulated ? '(MODO SIMULADO)' : '(MÓDULO FÍSICO)'} • FRONTAL: {telemetry.front} cm | SOLO: {telemetry.ground} cm
             </Text>
             <View style={styles.simulatorGrid}>
               {(
@@ -1848,5 +1900,39 @@ const styles = StyleSheet.create({
   simCardBtnTextActive: {
     color: '#0F172A',
     fontWeight: '900',
+  },
+  matLiveHeaderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  matLiveHeaderCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  matLiveHeaderLabel: {
+    color: '#94A3B8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  matLiveHeaderValue: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  matLiveHeaderDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#334155',
   },
 });

@@ -66,7 +66,7 @@
 #define STAIRS_UP_GROUND_CM         (GROUND_BASELINE_CM - 22.0f) // < 63 cm
 
 // Limiares horizontais para Parede / Obstáculo Frontal (RF03)
-#define WALL_MIN_CM                 20.0f
+#define WALL_MIN_CM                 3.0f
 #define WALL_CRITICAL_CM            90.0f   // Alerta crítico (muito próximo)
 #define WALL_WARNING_CM             180.0f  // Alerta moderado
 
@@ -169,7 +169,7 @@ ObstacleType classifyTerrain(float frontCm, float groundCm, float* outPrimaryDis
 
   // 2. Degrau / Escada Ascendente (RF02)
   // O sensor inferior detecta elevação do piso à frente E/OU o sensor frontal detecta espelho do degrau
-  if (groundCm <= STAIRS_UP_GROUND_CM && groundCm > 15.0f) {
+  if (groundCm <= STAIRS_UP_GROUND_CM && groundCm >= 3.0f) {
     *outPrimaryDistCm = groundCm;
     return OBS_STAIRS;
   }
@@ -250,12 +250,36 @@ const char* obstacleToString(ObstacleType type) {
   }
 }
 
+static unsigned long lastObstacleNotifyMs = 0;
+static ObstacleType lastSentType = OBS_CLEAR;
 void notifyBleTelemetry(ObstacleType type, float primaryDistCm, float frontCm, float groundCm) {
   if (!deviceConnected || pObstacleCharacteristic == nullptr) return;
 
   unsigned long now = millis();
   // Envia imediatamente se o tipo de obstáculo mudou, ou a cada 250ms (< 300ms do RNF02)
-  if (type != lastReportedObstacle || (now - lastBleNotifyMs >= 250)) {
+  bool isObstacle = (type != OBS_CLEAR);
+  bool shouldSend = false;
+
+  if (isObstacle) {
+    // Tolerância Anti-Flapping:
+    // 1. Se for o MESMO obstáculo: repete apenas a cada 3,5s (para não cortar a voz do celular)
+    // 2. Se for um NOVO obstáculo diferente: exige intervalo mínimo de 2,5s para evitar alternâncias rápidas
+    //    EXCEÇÃO DE SEGURANÇA: Buraco (HOLE) tem prioridade de vida e fura a fila imediatamente!
+    bool isUrgentHole = (type == OBS_HOLE && lastSentType != OBS_HOLE);
+    bool minIntervalPassed = (now - lastObstacleNotifyMs >= 2500);
+    bool sameObstacleRepeatTimeout = (now - lastObstacleNotifyMs >= 3500);
+
+    if (isUrgentHole || (type != lastSentType && minIntervalPassed) || (type == lastSentType && sameObstacleRepeatTimeout)) {
+      shouldSend = true;
+      lastObstacleNotifyMs = now;
+    }
+  } else {
+    if (lastSentType != OBS_CLEAR || (now - lastBleNotifyMs >= 1500)) {
+      shouldSend = true;
+    }
+  }
+
+  if (shouldSend) {
     char payload[128];
     snprintf(
       payload,
@@ -271,6 +295,7 @@ void notifyBleTelemetry(ObstacleType type, float primaryDistCm, float frontCm, f
     pObstacleCharacteristic->setValue((uint8_t*)payload, strlen(payload));
     pObstacleCharacteristic->notify();
 
+    lastSentType = type;
     lastReportedObstacle = type;
     lastBleNotifyMs = now;
   }
@@ -287,8 +312,10 @@ void setup() {
 
   // Configuração dos pinos dos sensores HC-SR04
   pinMode(PIN_FRONT_TRIG, OUTPUT);
+  digitalWrite(PIN_FRONT_TRIG, LOW);
   pinMode(PIN_FRONT_ECHO, INPUT);
   pinMode(PIN_GROUND_TRIG, OUTPUT);
+  digitalWrite(PIN_GROUND_TRIG, LOW);
   pinMode(PIN_GROUND_ECHO, INPUT);
 
   // Configuração do PWM do motor de vibração (compatível com ESP32 Arduino Core 3.x)
@@ -351,7 +378,37 @@ void loop() {
   // 4. Classificação do terreno e acionamento IMEDIATO do alerta vibratório (RNF01 < 150ms)
   float primaryDistCm = 0.0f;
   ObstacleType detectedType = classifyTerrain(filteredFrontCm, filteredGroundCm, &primaryDistCm);
-  updateVibrationFeedback(detectedType, primaryDistCm);
+  // 5. Filtro de Persistência Temporal (Elimina ruídos de 1 ciclo e alternâncias rápidas)
+  static ObstacleType pendingType = OBS_CLEAR;
+  static uint8_t candidateCycles = 0;
+  static ObstacleType confirmedType = OBS_CLEAR;
+
+  if (detectedType == pendingType) {
+    if (candidateCycles < 3) {
+      candidateCycles++;
+    }
+  } else {
+    pendingType = detectedType;
+    candidateCycles = 1;
+  }
+
+  // Só promove a obstáculo oficial se persistir por 3 ciclos consecutivos (~120 ms)
+  if (candidateCycles >= 3) {
+    confirmedType = pendingType;
+  }
+
+  updateVibrationFeedback(confirmedType, primaryDistCm);
+
+  // Log de diagnóstico a cada 500ms no Monitor Serial (115200 baud)
+  static unsigned long lastDebugPrintMs = 0;
+  if (millis() - lastDebugPrintMs >= 500) {
+    Serial.printf("[MAT-DEBUG] Frontal: %.1f cm (raw: %.1f) | Solo: %.1f cm (raw: %.1f) | Obstaculo: %s | BLE: %s\n",
+                  filteredFrontCm, rawFrontCm,
+                  filteredGroundCm, rawGroundCm,
+                  obstacleToString(confirmedType),
+                  deviceConnected ? "CONECTADO" : "AGUARDANDO");
+    lastDebugPrintMs = millis();
+  }
 
   // 5. Atualização periódica da bateria (a cada 10 segundos)
   unsigned long now = millis();
@@ -365,7 +422,7 @@ void loop() {
   }
 
   // 6. Envio de telemetria via Bluetooth Low Energy para o App MAT (RF07 / RNF02)
-  notifyBleTelemetry(detectedType, primaryDistCm, filteredFrontCm, filteredGroundCm);
+  notifyBleTelemetry(confirmedType, primaryDistCm, filteredFrontCm, filteredGroundCm);
 
   // 7. Gerenciamento de reconexão automática do Advertising BLE (RF13)
   if (!deviceConnected && oldDeviceConnected) {
