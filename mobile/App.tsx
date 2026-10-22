@@ -587,7 +587,16 @@ export default function App() {
           `Deslize para a esquerda para confirmar a rota, ou deslize para a direita para cancelar.`,
         { interrupt: true }
       );
-    } catch {
+    } catch (err: any) {
+      if (err?.message === 'DESTINO_MUITO_DISTANTE') {
+        speechService.triggerGestureHaptic('CANCEL');
+        speechService.speak(
+          'O destino encontrado fica muito distante para uma rota a pé. Por favor, diga também o nome do bairro ou da rua.',
+          { interrupt: true }
+        );
+        setVoiceFeedbackHint('Destino muito distante para caminhada a pé.');
+        return;
+      }
       handleUnrecognizedDestination();
     } finally {
       setIsCalculatingRoute(false);
@@ -660,8 +669,16 @@ export default function App() {
   const stepIndexRef = useRef<number>(currentStepIndex);
   stepIndexRef.current = currentStepIndex;
   const preWarnedStepRef = useRef<number>(-1);
+  const lastStepAdvanceTimeRef = useRef<number>(0);
 
   const handleNextStep = () => {
+    const now = Date.now();
+    // Evita avanços em rajada provocados por oscilações e ruídos instantâneos de GPS (debounce de 3.5s)
+    if (now - lastStepAdvanceTimeRef.current < 3500) {
+      return;
+    }
+    lastStepAdvanceTimeRef.current = now;
+
     const activeRoute = routeRef.current;
     if (!activeRoute) return;
     const nextIdx = stepIndexRef.current + 1;
@@ -715,7 +732,7 @@ export default function App() {
         const nextStep = route.steps[idx + 1];
         if (
           remainingMeters <= 25 &&
-          remainingMeters > 14 &&
+          remainingMeters > 12 &&
           preWarnedStepRef.current !== idx &&
           nextStep
         ) {
@@ -726,7 +743,7 @@ export default function App() {
           );
         }
 
-        if (remainingMeters <= 14) {
+        if (remainingMeters <= 12) {
           handleNextStep();
         }
       })
