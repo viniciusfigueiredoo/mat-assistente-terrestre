@@ -59,7 +59,6 @@ export default function App() {
   // Estado de conexão Bluetooth (BLE) com o ESP32 (RF07, RF13)
   const [bleConnected, setBleConnected] = useState<boolean>(false);
   const [isBleSimulated, setIsBleSimulated] = useState<boolean>(true);
-  const [batteryLevel, setBatteryLevel] = useState<number>(85);
 
   // Estado de Comando de Voz (STT - RF08)
   const [isListening, setIsListening] = useState<boolean>(false);
@@ -302,9 +301,6 @@ export default function App() {
 
     const unsubTelemetry = bleService.onTelemetry((payload) => {
       setTelemetry(payload);
-      if (typeof payload.bat === 'number') {
-        setBatteryLevel(payload.bat);
-      }
 
       const now = Date.now();
       const last = lastObstacleAlertRef.current;
@@ -847,7 +843,7 @@ export default function App() {
                   ? 'Modo Simulado. Toque para conectar o ESP32 real'
                   : 'Físico Conectado'
                 : 'Desconectado. Toque para conectar'
-            }. Bateria em ${batteryLevel} por cento.`}
+            }`}
           >
             <View
               style={[
@@ -869,9 +865,6 @@ export default function App() {
                   : 'MAT Conectado'
                 : 'Buscando MAT'}
             </Text>
-            <View style={styles.pillDivider} />
-            <Ionicons name="battery-charging" size={16} color="#10B981" />
-            <Text style={styles.batteryText}>{batteryLevel}%</Text>
           </Pressable>
 
           <Pressable

@@ -44,9 +44,6 @@
 #define PWM_FREQ            5000
 #define PWM_RESOLUTION      8 // 0 a 255
 
-// --- Leitura da Bateria (Divisor de Tensão no ADC - RF07) ---
-#define PIN_BATTERY_ADC     34
-
 // ============================================================================
 // 2. LIMIARES DE DETECÇÃO (em cm)
 // ============================================================================
@@ -90,11 +87,9 @@
 #define BLE_DEVICE_NAME             "MAT-ESP32"
 #define SERVICE_UUID                "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHAR_OBSTACLE_UUID          "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define CHAR_BATTERY_UUID           "beb5483e-36e1-4688-b7f5-ea07361b26a9"
 
 BLEServer* pServer = nullptr;
 BLECharacteristic* pObstacleCharacteristic = nullptr;
-BLECharacteristic* pBatteryCharacteristic = nullptr;
 volatile bool deviceConnected = false;
 bool oldDeviceConnected = false;
 
@@ -119,11 +114,9 @@ uint8_t candidateCycles = 0;
 
 // Telemetria
 unsigned long lastBleNotifyMs = 0;
-unsigned long lastBatteryReadMs = 0;
 unsigned long lastDebugPrintMs = 0;
 ObstacleType lastSentType = OBS_CLEAR;
 uint32_t packetSeq = 0;
-uint8_t currentBatteryPercent = 85;
 
 // ============================================================================
 // 6. CALLBACKS DE CONEXÃO BLE
@@ -253,20 +246,8 @@ void updateVibrationFeedback(ObstacleType type, float distanceCm) {
 }
 
 // ============================================================================
-// 9. BATERIA E TELEMETRIA BLE (RF07 / RNF02)
+// 9. TELEMETRIA BLE (RF07 / RNF02)
 // ============================================================================
-uint8_t readBatteryPercentage() {
-  int rawAdc = analogRead(PIN_BATTERY_ADC);
-  if (rawAdc <= 0) {
-    return 85; // Divisor de bateria não conectado na bancada
-  }
-  float voltage = (rawAdc / 4095.0f) * 3.3f * 2.0f;
-  int pct = (int)((voltage - 3.2f) * 100.0f / (4.2f - 3.2f));
-  if (pct > 100) pct = 100;
-  if (pct < 5)   pct = 85;
-  return (uint8_t)pct;
-}
-
 /**
  * Envia o estado confirmado ao celular:
  * - imediatamente quando o tipo confirmado muda;
@@ -286,12 +267,11 @@ void notifyBleTelemetry(ObstacleType type, float distCm, float frontCm, float gr
   snprintf(
     payload,
     sizeof(payload),
-    "%s,%.0f,%.0f,%.0f,%u",
+    "%s,%.0f,%.0f,%.0f",
     obstacleToString(type),
     distCm,
     frontCm,
-    groundCm,
-    currentBatteryPercent
+    groundCm
   );
 
   pObstacleCharacteristic->setValue((uint8_t*)payload, strlen(payload));
@@ -342,12 +322,6 @@ void setup() {
   );
   pObstacleCharacteristic->addDescriptor(new BLE2902());
 
-  pBatteryCharacteristic = pService->createCharacteristic(
-    CHAR_BATTERY_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
-  );
-  pBatteryCharacteristic->addDescriptor(new BLE2902());
-
   pService->start();
 
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
@@ -390,18 +364,7 @@ void loop() {
     lastDebugPrintMs = millis();
   }
 
-  // 6. Bateria (a cada 10 s)
-  unsigned long now = millis();
-  if (now - lastBatteryReadMs >= 10000) {
-    currentBatteryPercent = readBatteryPercentage();
-    if (deviceConnected && pBatteryCharacteristic != nullptr) {
-      pBatteryCharacteristic->setValue(&currentBatteryPercent, 1);
-      pBatteryCharacteristic->notify();
-    }
-    lastBatteryReadMs = now;
-  }
-
-  // 7. Telemetria BLE
+  // 6. Telemetria BLE
   notifyBleTelemetry(type, distCm, frontCm, groundCm);
 
   // 8. Reconexão automática do advertising
