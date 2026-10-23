@@ -306,11 +306,12 @@ export default function App() {
         setBatteryLevel(payload.bat);
       }
 
+      const now = Date.now();
+      const last = lastObstacleAlertRef.current;
+
       if (payload.type !== 'CLEAR') {
-        const now = Date.now();
-        const last = lastObstacleAlertRef.current;
         const cooldownPassed = now - last.time >= 3500;
-        const isDifferentThreat = payload.type !== last.type && now - last.time >= 2000;
+        const isDifferentThreat = payload.type !== last.type && now - last.time >= 1500;
         const isUrgentHole = payload.type === 'HOLE' && last.type !== 'HOLE';
 
         if (cooldownPassed || isDifferentThreat || isUrgentHole) {
@@ -324,6 +325,15 @@ export default function App() {
           speechService.triggerGestureHaptic('DANGER');
           speechService.speak(alertMessage, { interrupt: true });
         }
+      } else if (last.type !== 'CLEAR') {
+        // Transição de obstáculo para caminho desimpedido
+        lastObstacleAlertRef.current = {
+          type: 'CLEAR',
+          time: now,
+          dist: payload.dist,
+        };
+        speechService.triggerGestureHaptic('SUCCESS');
+        speechService.speak(OBSTACLE_METADATA.CLEAR.ttsAlert(), { interrupt: true });
       }
     });
 
@@ -1334,7 +1344,7 @@ export default function App() {
                   },
                   {
                     kind: 'WALL',
-                    label: 'Parede (0.9m)',
+                    label: 'Obstáculo (0.9m)',
                     dist: 90,
                     icon: 'stop-circle',
                   },

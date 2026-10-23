@@ -15,7 +15,7 @@ export const OBSTACLE_METADATA: Record<
   {
     title: string;
     shortDescription: string;
-    ttsAlert: (distMeters: string) => string;
+    ttsAlert: (distMeters?: string) => string;
     badgeColor: string;
     backgroundColor: string;
     borderColor: string;
@@ -25,37 +25,34 @@ export const OBSTACLE_METADATA: Record<
   CLEAR: {
     title: 'Caminho Livre',
     shortDescription: 'Nenhum obstáculo detectado à frente.',
-    ttsAlert: () => 'Caminho livre.',
+    ttsAlert: () => 'Caminho livre',
     badgeColor: '#10B981',
     backgroundColor: '#064E3B',
     borderColor: '#10B981',
     textColor: '#ECFDF5',
   },
   HOLE: {
-    title: 'Desnível / Buraco',
-    shortDescription: 'Desnível ou buraco detectado no solo à frente!',
-    ttsAlert: (distMeters) =>
-      `Atenção! Desnível ou buraco a ${distMeters} metros à frente.`,
+    title: 'Desnível',
+    shortDescription: 'Desnível no solo detectado.',
+    ttsAlert: () => 'Desnível à frente',
     badgeColor: '#F43F5E',
     backgroundColor: '#4C0519',
     borderColor: '#FB7185',
     textColor: '#FFE4E6',
   },
   STAIRS: {
-    title: 'Desnível / Buraco',
+    title: 'Desnível',
     shortDescription: 'Desnível no solo detectado.',
-    ttsAlert: (distMeters) =>
-      `Atenção! Desnível ou buraco a ${distMeters} metros à frente.`,
+    ttsAlert: () => 'Desnível à frente',
     badgeColor: '#F43F5E',
     backgroundColor: '#4C0519',
     borderColor: '#FB7185',
     textColor: '#FFE4E6',
   },
   WALL: {
-    title: 'Parede / Obstáculo',
-    shortDescription: 'Parede ou obstáculo frontal detectado.',
-    ttsAlert: (distMeters) =>
-      `Cuidado! Parede ou obstáculo a ${distMeters} metros à frente.`,
+    title: 'Obstáculo',
+    shortDescription: 'Obstáculo frontal detectado.',
+    ttsAlert: () => 'Obstáculo eminente',
     badgeColor: '#EF4444',
     backgroundColor: '#450A0A',
     borderColor: '#F87171',
