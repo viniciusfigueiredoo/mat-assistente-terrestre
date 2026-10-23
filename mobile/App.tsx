@@ -1328,15 +1328,9 @@ export default function App() {
                 [
                   {
                     kind: 'HOLE',
-                    label: 'Buraco (1.2m)',
+                    label: 'Desnível (1.2m)',
                     dist: 120,
                     icon: 'alert-circle',
-                  },
-                  {
-                    kind: 'STAIRS',
-                    label: 'Escada (1.5m)',
-                    dist: 150,
-                    icon: 'layers',
                   },
                   {
                     kind: 'WALL',

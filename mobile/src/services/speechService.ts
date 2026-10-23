@@ -7,6 +7,7 @@ import * as Speech from 'expo-speech';
 let audioSessionInitialized = false;
 
 async function ensureSilentModePlayback(): Promise<void> {
+  if (audioSessionInitialized) return;
   try {
     await setAudioModeAsync({
       playsInSilentMode: true,

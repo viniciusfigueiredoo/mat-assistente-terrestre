@@ -68,6 +68,64 @@ function decodeBase64(b64: string): string {
 }
 
 /**
+ * Decodifica pacotes de telemetria recebidos do ESP32 via BLE.
+ * Suporta:
+ * 1. Formato Compacto CSV Ultra-Resiliente (ex: "WALL,30,30,85,85" ou "HOLE,130,200,130,85")
+ *    Cabe em menos de 18 bytes, imune a problemas de MTU (limite padrão de 20 bytes do BLE).
+ * 2. Formato JSON (ex: '{"type":"WALL","dist":30,...}')
+ */
+function parseTelemetryPacket(rawStr: string): MatTelemetryPayload | null {
+  const str = rawStr.trim();
+  if (!str) return null;
+
+  // 1. Formato CSV (Ultra-compacto e imune a truncamento de MTU)
+  const parts = str.split(',');
+  if (parts.length >= 3 && !str.startsWith('{')) {
+    const rawType = parts[0].trim().toUpperCase();
+    const type: ObstacleKind =
+      rawType === 'HOLE' || rawType === 'H' || rawType === 'STAIRS' || rawType === 'S'
+        ? 'HOLE'
+        : rawType === 'WALL' || rawType === 'W'
+        ? 'WALL'
+        : 'CLEAR';
+
+    return {
+      type,
+      dist: Number(parts[1]) || 0,
+      front: Number(parts[2]) || 0,
+      ground: Number(parts[3]) || 0,
+      bat: parts[4] ? Number(parts[4]) : 85,
+    };
+  }
+
+  // 2. Formato JSON padrão
+  if (str.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(str);
+      const rawType = String(parsed.type || parsed.t || 'CLEAR').toUpperCase();
+      const type: ObstacleKind =
+        rawType === 'HOLE' || rawType === 'H' || rawType === 'STAIRS' || rawType === 'S'
+          ? 'HOLE'
+          : rawType === 'WALL' || rawType === 'W'
+          ? 'WALL'
+          : 'CLEAR';
+
+      return {
+        type,
+        dist: Number(parsed.dist ?? parsed.d ?? 0),
+        front: Number(parsed.front ?? parsed.f ?? 0),
+        ground: Number(parsed.ground ?? parsed.g ?? 0),
+        bat: Number(parsed.bat ?? parsed.b ?? 85),
+      };
+    } catch {
+      // Ignora erro de JSON truncado
+    }
+  }
+
+  return null;
+}
+
+/**
  * Serviço de Comunicação Bluetooth Low Energy (BLE) com o ESP32 do Módulo MAT
  * Suporta:
  * 1. Conexão Nativa (Android / iOS via `react-native-ble-plx`)
@@ -174,15 +232,17 @@ class MatBleService {
         try {
           const value = event.target.value;
           const decoder = new TextDecoder('utf-8');
-          const jsonStr = decoder.decode(value);
-          const parsed = JSON.parse(jsonStr) as MatTelemetryPayload;
-          if (typeof parsed.bat === 'number') {
-            this.currentBattery = parsed.bat;
+          const rawStr = decoder.decode(value);
+          const parsed = parseTelemetryPacket(rawStr);
+          if (parsed) {
+            if (typeof parsed.bat === 'number') {
+              this.currentBattery = parsed.bat;
+            }
+            this.emitTelemetry({
+              ...parsed,
+              timestamp: Date.now(),
+            });
           }
-          this.emitTelemetry({
-            ...parsed,
-            timestamp: Date.now(),
-          });
         } catch (e) {
           console.warn('[WebBLE] Erro ao decodificar pacote do ESP32:', e);
         }
@@ -249,6 +309,16 @@ class MatBleService {
     try {
       const connected = await device.connect();
       await connected.discoverAllServicesAndCharacteristics();
+
+      // No Android, solicita MTU de 512 bytes para garantir transferência íntegra sem truncamento
+      if (Platform.OS === 'android') {
+        try {
+          await connected.requestMTU(512);
+        } catch {
+          // Ignora se o hardware BLE negociar MTU menor
+        }
+      }
+
       this.connectedDevice = connected;
       this.isConnected = true;
       this.isSimulatedMode = false;
@@ -269,15 +339,17 @@ class MatBleService {
         (err: any, characteristic: any) => {
           if (err || !characteristic?.value) return;
           try {
-            const jsonStr = decodeBase64(characteristic.value);
-            const parsed = JSON.parse(jsonStr) as MatTelemetryPayload;
-            if (typeof parsed.bat === 'number') {
-              this.currentBattery = parsed.bat;
+            const rawStr = decodeBase64(characteristic.value);
+            const parsed = parseTelemetryPacket(rawStr);
+            if (parsed) {
+              if (typeof parsed.bat === 'number') {
+                this.currentBattery = parsed.bat;
+              }
+              this.emitTelemetry({
+                ...parsed,
+                timestamp: Date.now(),
+              });
             }
-            this.emitTelemetry({
-              ...parsed,
-              timestamp: Date.now(),
-            });
           } catch (parseErr) {
             console.warn('[BLE] Erro ao decodificar pacote do ESP32:', parseErr);
           }
@@ -291,14 +363,14 @@ class MatBleService {
   }
 
   /**
-   * Permite simular o envio de um pacote BLE vindo do ESP32 (Buraco, Escada, Parede ou Livre)
+   * Permite simular o envio de um pacote BLE vindo do ESP32 (Buraco, Parede ou Livre)
    */
   simulateEsp32Obstacle(type: ObstacleKind, distCm = 150): void {
     const payload: MatTelemetryPayload = {
       type,
       dist: distCm,
       front: type === 'WALL' ? distCm : 240,
-      ground: type === 'HOLE' ? 135 : type === 'STAIRS' ? 55 : 85,
+      ground: type === 'HOLE' ? 135 : 85,
       bat: this.currentBattery,
       timestamp: Date.now(),
     };
