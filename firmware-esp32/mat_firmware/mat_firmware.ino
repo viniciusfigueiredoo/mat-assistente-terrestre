@@ -32,11 +32,11 @@
 // --- Sensor Ultrassônico Frontal (Paredes / Obstáculos - RF03) ---
 // ATENÇÃO: O pino ECHO do HC-SR04 (5V) deve passar por um divisor resistivo
 // (1k ohm + 2k ohm) antes de entrar na GPIO do ESP32 (3.3V), ou usar HC-SR04P (3.3V)
-#define PIN_FRONT_TRIG  5
-#define PIN_FRONT_ECHO  18
+#define PIN_FRONT_TRIG  17
+#define PIN_FRONT_ECHO  4
 
 // --- Sensor Ultrassônico Inferior/Inclinado (Desníveis / Buracos - RF01) ---
-#define PIN_GROUND_TRIG 19
+#define PIN_GROUND_TRIG 18
 #define PIN_GROUND_ECHO 21
 
 // --- Atuador Vibratório (Motor PWM via Transistor/MOSFET - RF04/RF05) ---
